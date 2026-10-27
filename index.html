@@ -364,7 +364,16 @@ function sample(now){
     else candN=0;
   }
   lastVoiced=now;
-  const cents=(m-target)*100;
+  let diff=m-target;
+  if(game){
+    // On the first note, follow whichever octave the player starts in and move the whole scale there.
+    const k=Math.round(diff/12);
+    if(k!==0&&game.i===0&&game.held<game.period*0.5&&Math.abs(diff-12*k)<0.5)shiftGame(k);
+    // After that, judge pitch class only, so an octave slip in detection doesn't count as a wrong note.
+    diff-=12*Math.round(diff/12);
+    target=game.notes[game.i].midi;sp=game.notes[game.i];
+  }
+  const cents=diff*100;
   const p={t:now,c:cents,tg:target,f:freqOf(m),sp};
   hist.push(p);updateReadout(p);gameTick(now,cents);
 }
@@ -399,6 +408,16 @@ function startGame(){
   $('msg').classList.remove('err');
   $('msg').textContent='Hold each note until its beat bars fill. Brief gaps for bow changes are fine.';
   refreshGame();refreshStart();
+}
+function shiftGame(k){
+  const lo=Math.min(...game.notes.map(x=>x.midi))+12*k,hi=Math.max(...game.notes.map(x=>x.midi))+12*k;
+  if(lo<55||hi>100)return;                        // keep within the violin's range
+  game.notes=game.notes.map(x=>({...x,midi:x.midi+12*k,o:x.o+k}));
+  game.shifted=(game.shifted||0)+k;
+  refreshGame();
+  const s=game.shifted,top=game.notes[Math.floor(game.notes.length/2)];
+  $('msg').classList.remove('err');
+  $('msg').textContent=s?'Following you '+(s>0?'up ':'down ')+Math.abs(s)+' octave'+(Math.abs(s)>1?'s':'')+': '+spell(game.notes[0])+' – '+spell(top)+'.':'Back to the original octave.';
 }
 function endGame(finished){
   if(!game)return;
