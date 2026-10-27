@@ -73,7 +73,9 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
 .setup{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
 .field{display:flex;flex-direction:column;gap:4px}
 .field select{width:100%}
-.range{font:400 .85rem var(--mono);color:var(--muted)}
+.range{font:400 .85rem var(--mono);color:var(--muted);min-width:0}
+.ref{font:500 .9rem var(--mono);height:38px;padding:0 14px;border-radius:8px;border:1px solid var(--accent);background:var(--surface);color:var(--accent);cursor:pointer;flex:0 0 auto}
+.ref.on{background:var(--accent);color:var(--bg)}
 .check{display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--muted)}
 .strip{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin}
 .strip span{flex:0 0 auto;font:500 .85rem var(--mono);padding:5px 8px;border-radius:6px;border:1px solid var(--rule);color:var(--muted);background:var(--surface)}
@@ -168,7 +170,10 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
       <label class="field small" for="gBeats">Beats per note<select id="gBeats"><option>1</option><option>2</option><option>3</option><option>4</option></select></label>
       <label class="check" for="gClick"><input type="checkbox" id="gClick"> Click sound (use headphones)</label>
     </div>
-    <div class="range" id="gRange"></div>
+    <div class="row" id="refRow">
+      <button class="ref" id="playFirst">▶ Play A3</button>
+      <div class="range" id="gRange"></div>
+    </div>
     <div class="strip" id="strip" aria-label="Scale notes"></div>
     <div class="metro" id="metro" hidden>
       <div class="pulse" id="pulse" aria-hidden="true">1</div>
@@ -251,7 +256,8 @@ function refreshGame(){
   const first=sc.notes[0],top=sc.notes[Math.floor(sc.notes.length/2)];
   $('gRange').textContent=spell(first)+' – '+spell(top)+(sc.oct<S.oct?'  (limited to '+sc.oct+' octave'+(sc.oct>1?'s':'')+' to stay in range)':'')+' · '+sc.notes.length+' notes, up and down';
   renderStrip(sc.notes);
-  $('setup').hidden=!!game;$('metro').hidden=!game;
+  $('playFirst').textContent='▶ Play '+spell(first);
+  $('setup').hidden=!!game;$('playFirst').hidden=!!game;$('metro').hidden=!game;
   if(!game){$('beats').innerHTML='';}
 }
 function renderStrip(notes){
@@ -444,6 +450,29 @@ function click(strong){
     o.frequency.value=strong?1600:1200;g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(0.25,t+0.002);g.gain.exponentialRampToValueAtTime(0.0001,t+0.04);
     o.connect(g);g.connect(ac.destination);o.start(t);o.stop(t+0.05)}catch(e){}
 }
+
+/* Reference tone: a soft bowed-string-like tone at the scale's first note */
+let outCtx=null,toneEnd=0;
+function playTone(f,dur=2.2){
+  const c=ac||(outCtx=outCtx||new (window.AudioContext||window.webkitAudioContext)());
+  c.resume().catch(()=>{});
+  const t=c.currentTime,g=c.createGain(),lp=c.createBiquadFilter();
+  lp.type='lowpass';lp.frequency.value=Math.min(8000,f*5);lp.Q.value=0.7;
+  g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(0.18,t+0.12);
+  g.gain.setValueAtTime(0.18,t+dur-0.35);g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  lp.connect(g);g.connect(c.destination);
+  for(const d of [-3,3]){const o=c.createOscillator();o.type='sawtooth';o.frequency.value=f;o.detune.value=d;o.connect(lp);o.start(t);o.stop(t+dur+0.05)}
+  return dur*1000;
+}
+$('playFirst').onclick=()=>{
+  if(game)return;
+  const first=buildScale().notes[0],b=$('playFirst');
+  const ms=playTone(freqOf(first.midi));
+  b.classList.add('on');toneEnd=performance.now()+ms;
+  setTimeout(()=>{if(performance.now()>=toneEnd-20)b.classList.remove('on')},ms);
+  $('msg').classList.remove('err');
+  $('msg').textContent='Playing '+spell(first)+' at '+freqOf(first.midi).toFixed(1)+' Hz (A4 = '+S.a4+').';
+};
 
 let lastGame=null;
 function showResults(on){
