@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Intonation Line</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one-screen practice tool — readout on top, scrolling pitch trace in the middle, controls at the thumb. */
+:root{
+  --bg:#eef0ec; --surface:#fbfcfa; --ink:#1d1f1c; --muted:#646a62; --rule:#d3d8d0;
+  --accent:#94560f; --good:#2c8548; --off:#c0452c; --band:rgba(44,133,72,.12);
+  --display:"Instrument Serif",Georgia,"Times New Roman",serif;
+  --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#141311; --surface:#1c1a17; --ink:#ece7de; --muted:#9a9488; --rule:#302d28;
+  --accent:#e2a43c; --good:#5cc77d; --off:#ef7a5c; --band:rgba(92,199,125,.12); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141311; --surface:#1c1a17; --ink:#ece7de; --muted:#9a9488; --rule:#302d28;
+  --accent:#e2a43c; --good:#5cc77d; --off:#ef7a5c; --band:rgba(92,199,125,.12); color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.45 var(--body);
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.app{max-width:760px;margin:0 auto;min-height:100%;display:flex;flex-direction:column;gap:14px;
+  padding-block:14px 18px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+h1{font:400 1.6rem/1 var(--display);margin:0;letter-spacing:.01em}
+h1 span{color:var(--accent)}
+label.small{font-size:.75rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);display:flex;align-items:center;gap:8px}
+select{font:500 .9rem var(--mono);background:var(--surface);color:var(--ink);border:1px solid var(--rule);border-radius:6px;padding:5px 8px}
+
+.readout{display:grid;grid-template-columns:auto 1fr;align-items:end;gap:6px 18px}
+.note{font:400 clamp(4.2rem,18vw,6.5rem)/.85 var(--display);min-width:2.2ch}
+.note sub{font-size:.38em;vertical-align:baseline;color:var(--muted);margin-left:2px}
+.nums{display:flex;flex-direction:column;gap:4px;padding-bottom:6px;min-width:0}
+.cents{font:500 clamp(1.8rem,7vw,2.4rem)/1 var(--mono);font-variant-numeric:tabular-nums}
+.cents.good{color:var(--good)} .cents.off{color:var(--off)}
+.hz{font:400 .9rem var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.chip{justify-self:start;grid-column:1/-1;font-size:.72rem;text-transform:uppercase;letter-spacing:.09em;font-weight:600;
+  padding:3px 9px;border-radius:999px;border:1px solid var(--rule);color:var(--muted)}
+.chip.good{color:var(--good);border-color:currentColor}
+.chip.off{color:var(--off);border-color:currentColor}
+
+.scope{position:relative;flex:1 1 auto;min-height:260px;background:var(--surface);border:1px solid var(--rule);border-radius:10px;overflow:hidden}
+canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+
+.controls{display:flex;flex-direction:column;gap:12px}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.seg{display:inline-flex;border:1px solid var(--rule);border-radius:8px;overflow:hidden;background:var(--surface)}
+.seg button{border:0;background:transparent;color:var(--muted);font:500 .9rem var(--body);padding:8px 14px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.stepper{display:inline-flex;align-items:center;border:1px solid var(--rule);border-radius:8px;background:var(--surface)}
+.stepper button{border:0;background:transparent;color:var(--ink);font:500 1.1rem var(--mono);width:40px;height:38px;cursor:pointer}
+.stepper output{font:500 1rem var(--mono);min-width:4.2ch;text-align:center}
+.strings{display:inline-flex;gap:6px}
+.strings button{font:500 .9rem var(--mono);width:44px;height:38px;border-radius:8px;border:1px solid var(--rule);background:var(--surface);color:var(--ink);cursor:pointer}
+.strings button.on{border-color:var(--accent);color:var(--accent)}
+.start{font:600 1rem var(--body);border:0;border-radius:10px;padding:14px 18px;background:var(--accent);color:var(--bg);cursor:pointer;width:100%}
+.start.stop{background:transparent;color:var(--ink);border:1px solid var(--rule)}
+button:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.msg{font-size:.85rem;color:var(--muted);margin:0;max-width:65ch}
+.msg.err{color:var(--off)}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Intonation <span>Line</span></h1>
+    <div class="row">
+      <label class="small" for="tol">In tune ±
+        <select id="tol"><option value="5">5¢</option><option value="10" selected>10¢</option><option value="15">15¢</option><option value="20">20¢</option></select>
+      </label>
+      <label class="small" for="a4">A4
+        <select id="a4"><option>415</option><option selected>440</option><option>441</option><option>442</option><option>443</option></select>
+      </label>
+    </div>
+  </header>
+
+  <section class="readout" aria-live="polite">
+    <div class="note" id="note">A<sub>4</sub></div>
+    <div class="nums">
+      <div class="cents" id="cents">+4¢</div>
+      <div class="hz" id="hz">441.0 Hz · target 440.0 Hz</div>
+    </div>
+    <div class="chip" id="chip">Example trace</div>
+  </section>
+
+  <div class="scope"><canvas id="cv" aria-label="Pitch over the last eight seconds, in cents from the target note"></canvas></div>
+
+  <section class="controls">
+    <div class="row">
+      <div class="seg" role="group" aria-label="Target">
+        <button id="mAuto" aria-pressed="true">Nearest note</button>
+        <button id="mFixed" aria-pressed="false">Fixed note</button>
+      </div>
+      <div class="stepper" id="stepper" hidden>
+        <button id="down" aria-label="Semitone down">−</button>
+        <output id="fixedOut">A4</output>
+        <button id="up" aria-label="Semitone up">+</button>
+      </div>
+      <div class="strings" aria-label="Open strings">
+        <button data-m="55">G3</button><button data-m="62">D4</button><button data-m="69">A4</button><button data-m="76">E5</button>
+      </div>
+    </div>
+    <button class="start" id="start">Start listening</button>
+    <p class="msg" id="msg">Uses your microphone to detect pitch. Nothing is recorded or sent anywhere.</p>
+  </section>
+</div>
+
+<script>
+const NAMES=['C','C♯','D','E♭','E','F','F♯','G','A♭','A','B♭','B'];
+const $=id=>document.getElementById(id);
+const S={mode:'auto',fixed:69,tol:10,a4:440};
+try{Object.assign(S,JSON.parse(localStorage.getItem('intonation-line')||'{}'))}catch(e){}
+const save=()=>{try{localStorage.setItem('intonation-line',JSON.stringify(S))}catch(e){}};
+
+const nameOf=m=>({n:NAMES[((m%12)+12)%12],o:Math.floor(m/12)-1});
+const label=m=>{const x=nameOf(m);return x.n+x.o};
+const freqOf=m=>S.a4*Math.pow(2,(m-69)/12);
+const midiOf=f=>69+12*Math.log2(f/S.a4);
+
+/* ---------- UI wiring ---------- */
+$('tol').value=S.tol; $('a4').value=S.a4;
+$('tol').onchange=e=>{S.tol=+e.target.value;save()};
+$('a4').onchange=e=>{S.a4=+e.target.value;save()};
+function setMode(m){S.mode=m;$('mAuto').setAttribute('aria-pressed',m==='auto');$('mFixed').setAttribute('aria-pressed',m==='fixed');
+  $('stepper').hidden=m!=='fixed';refreshStrings();save()}
+function setFixed(m){S.fixed=Math.max(52,Math.min(100,m));$('fixedOut').textContent=label(S.fixed);refreshStrings();save()}
+function refreshStrings(){document.querySelectorAll('.strings button').forEach(b=>b.classList.toggle('on',S.mode==='fixed'&&+b.dataset.m===S.fixed))}
+$('mAuto').onclick=()=>setMode('auto');
+$('mFixed').onclick=()=>{if(S.mode!=='fixed'&&target!=null)setFixed(target);setMode('fixed')};
+$('down').onclick=()=>setFixed(S.fixed-1);
+$('up').onclick=()=>setFixed(S.fixed+1);
+document.querySelectorAll('.strings button').forEach(b=>b.onclick=()=>{setFixed(+b.dataset.m);setMode('fixed')});
+setFixed(S.fixed);setMode(S.mode);
+
+/* ---------- Pitch detection (YIN) ---------- */
+let yinD=null;
+function yin(buf,sr){
+  const W=2048,tauMin=Math.floor(sr/3600),tauMax=Math.min(Math.floor(sr/170),buf.length-W-1);
+  if(!yinD||yinD.length<tauMax+2)yinD=new Float32Array(tauMax+2);
+  const d=yinD;
+  for(let t=1;t<=tauMax;t++){let s=0;for(let i=0;i<W;i++){const x=buf[i]-buf[i+t];s+=x*x}d[t]=s}
+  d[0]=1;let run=0;
+  for(let t=1;t<=tauMax;t++){run+=d[t];d[t]=run?d[t]*t/run:1}
+  let tau=-1;
+  for(let t=Math.max(2,tauMin);t<tauMax;t++){if(d[t]<0.15){while(t+1<tauMax&&d[t+1]<d[t])t++;tau=t;break}}
+  if(tau<0)return null;
+  const a=d[tau-1],b=d[tau],c=d[tau+1],den=a+c-2*b;
+  const shift=den?(a-c)/(2*den):0;
+  return {f:sr/(tau+shift),clarity:1-b};
+}
+
+/* ---------- Audio ---------- */
+let ac=null,stream=null,an=null,buf=null,running=false,wake=null;
+let hist=[],recent=[],target=null,cand=null,candN=0,lastVoiced=0;
+const SPAN=8000;
+
+async function start(){
+  $('msg').classList.remove('err');
+  if(!navigator.mediaDevices?.getUserMedia){
+    showErr('This browser can\'t reach the microphone from here. Open the file in Chrome, Firefox or Safari on a computer, or serve it over https.');return}
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+  }catch(e){
+    showErr(e.name==='NotAllowedError'?'Microphone access is blocked. Allow it in the browser\'s site settings, then press Start again.':'Couldn\'t open the microphone: '+e.message);return}
+  ac=new (window.AudioContext||window.webkitAudioContext)();
+  const src=ac.createMediaStreamSource(stream);
+  const hp=ac.createBiquadFilter();hp.type='highpass';hp.frequency.value=150;
+  an=ac.createAnalyser();an.fftSize=4096;src.connect(hp);hp.connect(an);
+  buf=new Float32Array(an.fftSize);
+  hist=[];recent=[];target=null;running=true;
+  $('start').textContent='Stop';$('start').classList.add('stop');
+  $('msg').textContent='Listening. Play a long note; the line shows how far it sits from the target.';
+  try{wake=await navigator.wakeLock?.request('screen')}catch(e){}
+}
+function stop(){
+  running=false;stream?.getTracks().forEach(t=>t.stop());ac?.close();ac=null;
+  try{wake?.release()}catch(e){} wake=null;
+  $('start').textContent='Start listening';$('start').classList.remove('stop');
+  $('msg').textContent='Stopped. The last eight seconds stay on screen.';
+}
+function showErr(t){$('msg').textContent=t;$('msg').classList.add('err')}
+$('start').onclick=()=>running?stop():start();
+
+function median(a){const s=[...a].sort((x,y)=>x-y);return s[s.length>>1]}
+
+function sample(now){
+  an.getFloatTimeDomainData(buf);
+  let rms=0;for(let i=0;i<buf.length;i++)rms+=buf[i]*buf[i];rms=Math.sqrt(rms/buf.length);
+  let m=null;
+  if(rms>0.006){
+    const r=yin(buf,ac.sampleRate);
+    if(r&&r.clarity>0.85&&r.f>180&&r.f<3600){recent.push(midiOf(r.f));if(recent.length>5)recent.shift();m=median(recent)}
+  }
+  if(m==null){recent.length=0;hist.push({t:now,c:null,tg:null});updateReadout(null);return}
+  if(now-lastVoiced>300&&S.mode==='auto')target=null;
+  lastVoiced=now;
+  if(S.mode==='fixed')target=S.fixed;
+  else if(target==null)target=Math.round(m);
+  else if(Math.abs(m-target)>0.62){const c=Math.round(m);candN=c===cand?candN+1:1;cand=c;if(candN>=3){target=c;candN=0}}
+  else candN=0;
+  const cents=(m-target)*100;
+  hist.push({t:now,c:cents,tg:target,f:freqOf(m)});
+  updateReadout(hist[hist.length-1]);
+}
+
+function updateReadout(p){
+  const chip=$('chip'),ce=$('cents');
+  if(!p){chip.textContent='Waiting for a note';chip.className='chip';ce.className='cents';ce.textContent='—';$('hz').textContent=' ';
+    if(S.mode==='fixed'){const x=nameOf(S.fixed);$('note').innerHTML=x.n+'<sub>'+x.o+'</sub>'}return}
+  const x=nameOf(p.tg);$('note').innerHTML=x.n+'<sub>'+x.o+'</sub>';
+  const c=Math.round(p.c),good=Math.abs(p.c)<=S.tol;
+  ce.textContent=(c>0?'+':c<0?'−':'±')+Math.abs(c)+'¢';
+  ce.className='cents '+(good?'good':'off');
+  chip.className='chip '+(good?'good':'off');
+  chip.textContent=good?'In tune':(p.c>0?'Sharp':'Flat');
+  $('hz').textContent=p.f.toFixed(1)+' Hz · target '+freqOf(p.tg).toFixed(1)+' Hz';
+}
+
+/* ---------- Example trace shown before listening ---------- */
+(function demo(){
+  const now=performance.now(),pts=[];
+  const seg=(t0,t1,tg,fn)=>{for(let t=t0;t<t1;t+=16)pts.push({t:now-SPAN+t,c:fn((t-t0)/1000),tg,f:0})};
+  seg(200,2900,69,s=>14*Math.exp(-s*2.2)+2+(s>1?4*Math.sin(s*2*Math.PI*5.5):0));
+  for(let t=2900;t<3300;t+=16)pts.push({t:now-SPAN+t,c:null,tg:null});
+  seg(3300,5700,74,s=>-18*Math.exp(-s*1.6)-3+(s>1.2?5*Math.sin(s*2*Math.PI*5.8):0));
+  for(let t=5700;t<6100;t+=16)pts.push({t:now-SPAN+t,c:null,tg:null});
+  seg(6100,7990,76,s=>9-s*3+3*Math.sin(s*2*Math.PI*6));
+  hist=pts;
+})();
+
+/* ---------- Drawing ---------- */
+const cv=$('cv'),g=cv.getContext('2d');
+let frozenNow=performance.now();
+function draw(now){
+  const r=cv.getBoundingClientRect(),dpr=window.devicePixelRatio||1;
+  if(cv.width!==Math.round(r.width*dpr)||cv.height!==Math.round(r.height*dpr)){cv.width=Math.round(r.width*dpr);cv.height=Math.round(r.height*dpr)}
+  g.setTransform(dpr,0,0,dpr,0,0);
+  const W=r.width,H=r.height,cs=getComputedStyle(document.documentElement),v=k=>cs.getPropertyValue(k).trim();
+  const L=44,R=14,T=14,B=14,pw=W-L-R,ph=H-T-B,RANGE=50;
+  const y=c=>T+ph/2-(Math.max(-RANGE,Math.min(RANGE,c))/RANGE)*(ph/2);
+  const tNow=running?now:frozenNow,x=t=>L+pw-((tNow-t)/SPAN)*pw;
+  g.clearRect(0,0,W,H);
+  // in-tune band
+  g.fillStyle=v('--band');g.fillRect(L,y(S.tol),pw,y(-S.tol)-y(S.tol));
+  // grid
+  g.font='500 11px '+v('--mono');g.textAlign='right';g.textBaseline='middle';
+  for(const c of [50,25,0,-25,-50]){
+    g.strokeStyle=v('--rule');g.lineWidth=1;g.setLineDash(c?[3,4]:[]);
+    if(c){g.beginPath();g.moveTo(L,y(c));g.lineTo(L+pw,y(c));g.stroke()}
+    g.fillStyle=v('--muted');g.fillText((c>0?'+':c<0?'−':'')+Math.abs(c),L-8,y(c));
+  }
+  g.setLineDash([]);
+  g.fillStyle=v('--muted');g.textAlign='left';g.fillText('sharp',L+6,T+9);g.textBaseline='alphabetic';g.fillText('flat',L+6,H-B-4);
+  // target line
+  g.strokeStyle=v('--accent');g.lineWidth=2;g.beginPath();g.moveTo(L,y(0));g.lineTo(L+pw,y(0));g.stroke();
+  // trace
+  while(hist.length&&tNow-hist[0].t>SPAN+200)hist.shift();
+  const good=v('--good'),off=v('--off'),ink=v('--ink');
+  g.lineWidth=2.5;g.lineCap='round';g.lineJoin='round';
+  let prev=null;
+  g.font='400 18px '+v('--display');g.textBaseline='bottom';
+  for(const p of hist){
+    if(p.c==null){prev=null;continue}
+    if(prev&&prev.tg===p.tg){
+      g.strokeStyle=Math.abs(p.c)<=S.tol?good:off;
+      g.beginPath();g.moveTo(x(prev.t),y(prev.c));g.lineTo(x(p.t),y(p.c));g.stroke();
+    }else if(x(p.t)>L){
+      g.fillStyle=ink;g.fillText(label(p.tg),Math.max(L+4,x(p.t)),y(0)-6);
+    }
+    prev=p;
+  }
+  const last=hist[hist.length-1];
+  if(last&&last.c!=null){
+    g.fillStyle=Math.abs(last.c)<=S.tol?good:off;g.beginPath();g.arc(x(last.t),y(last.c),5,0,Math.PI*2);g.fill();
+  }
+}
+function loop(now){if(running&&an)sample(now);if(running)frozenNow=now;draw(now);requestAnimationFrame(loop)}
+{const p=hist.filter(q=>q.c!=null).at(-1);p.f=freqOf(p.tg+p.c/100);updateReadout(p);$('chip').className='chip';$('chip').textContent='Example trace';}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
