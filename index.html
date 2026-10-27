@@ -108,7 +108,7 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
   <header>
     <h1>Intonation <span>Line</span></h1>
     <div class="row">
-      <label class="small" for="tol">In tune ±
+      <label class="small" for="tol" id="tolWrap">In tune ±
         <select id="tol"><option value="5">5¢</option><option value="10">10¢</option><option value="15">15¢</option><option value="20">20¢</option></select>
       </label>
       <label class="small" for="a4">A4
@@ -168,6 +168,10 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
       <label class="field small" for="gOct">Octaves<select id="gOct"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
       <label class="field small" for="gBpm">Tempo<select id="gBpm"></select></label>
       <label class="field small" for="gBeats">Beats per note<select id="gBeats"><option>1</option><option>2</option><option>3</option><option>4</option></select></label>
+      <label class="field small" for="gTol">In tune ±<select id="gTol"><option value="5">5¢</option><option value="10">10¢</option><option value="15">15¢</option><option value="20">20¢</option><option value="25">25¢</option></select></label>
+      <label class="field small" for="gTune">Tuning<select id="gTune">
+        <option value="equal">Equal temperament</option><option value="just">Just (pure)</option><option value="pyth">Pythagorean</option>
+      </select></label>
       <label class="check" for="gClick"><input type="checkbox" id="gClick"> Click sound (use headphones)</label>
     </div>
     <div class="row" id="refRow">
@@ -193,7 +197,7 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
 <script>
 const NAMES=['C','C♯','D','E♭','E','F','F♯','G','A♭','A','B♭','B'];
 const $=id=>document.getElementById(id);
-const S={tab:'tuner',mode:'auto',fixed:69,tol:10,a4:440,key:'A',type:'major',oct:2,bpm:72,beats:2,click:false};
+const S={tab:'tuner',mode:'auto',fixed:69,tol:10,a4:440,key:'A',type:'major',oct:2,bpm:72,beats:2,click:false,gtol:10,tune:'equal'};
 try{Object.assign(S,JSON.parse(localStorage.getItem('intonation-line')||'{}'))}catch(e){}
 const save=()=>{try{localStorage.setItem('intonation-line',JSON.stringify(S))}catch(e){}};
 
@@ -216,25 +220,37 @@ function buildScale(){
       if(o===oct&&d>0)break;
       const midi=root+o*12+iv[d],li=(k[1]+d)%7,nat=LPC[li];
       const acc=(((midi%12)-nat+18)%12)-6;
-      out.push({midi,n:LET[li]+ACC[acc],o:Math.floor((midi-acc)/12)-1});
+      out.push({midi,n:LET[li]+ACC[acc],o:Math.floor((midi-acc)/12)-1,adj:(TUNES[S.tune]||TUNES.equal)[(midi-root)%12]});
     }return out};
   const up=run(IV[S.type]),down=run(S.type==='melodic'?IV.natural:IV[S.type]).reverse().slice(1);
   return {notes:up.concat(down),oct};
 }
 const spell=x=>x.n+x.o;
+const TOL=()=>S.tab==='game'?S.gtol:S.tol;
+
+/* Cents away from equal temperament for each semitone above the tonic.
+   The tonic itself stays on equal temperament (relative to the A4 setting). */
+const TUNES={
+  equal:[0,0,0,0,0,0,0,0,0,0,0,0],
+  //     1     2    m3    M3    4    tri    5    m6    M6    m7    M7
+  just: [0,11.7,3.9,15.6,-13.7,-2.0,-9.8,2.0,13.7,-15.6,17.6,-11.7],
+  pyth: [0,-9.8,3.9,-5.9,7.8,-2.0,11.7,2.0,-7.8,5.9,-3.9,9.8]
+};
+const TUNE_NAME={equal:'equal temperament',just:'just intonation',pyth:'Pythagorean tuning'};
+const vsEqual=a=>Math.abs(a)<0.5?'':' ('+(a>0?'+':'−')+Math.abs(a).toFixed(0)+'¢ vs equal)';
 
 /* ---------- UI wiring ---------- */
 KEYS.forEach(k=>$('gKey').add(new Option(k[0],k[0])));
 for(let b=40;b<=160;b+=4)$('gBpm').add(new Option(b+' bpm',b));
 const bind=(id,key,num)=>{const el=$(id);el.value=S[key];el.onchange=()=>{S[key]=num?+el.value:el.value;save();refreshGame()}};
-bind('tol','tol',1);bind('a4','a4',1);bind('gKey','key');bind('gType','type');bind('gOct','oct',1);bind('gBpm','bpm',1);bind('gBeats','beats',1);
+bind("tol","tol",1);bind('gTol','gtol',1);bind('gTune','tune');bind('a4','a4',1);bind('gKey','key');bind('gType','type');bind('gOct','oct',1);bind('gBpm','bpm',1);bind('gBeats','beats',1);
 $('gClick').checked=S.click;$('gClick').onchange=e=>{S.click=e.target.checked;save()};
 
 function setTab(t){
   if(game&&t!=='game')endGame(false);
   S.tab=t;save();
   $('tabTuner').setAttribute('aria-pressed',t==='tuner');$('tabGame').setAttribute('aria-pressed',t==='game');
-  $('tunerCtl').hidden=t!=='tuner';$('gameCtl').hidden=t!=='game';
+  $('tunerCtl').hidden=t!=='tuner';$('gameCtl').hidden=t!=='game';$('tolWrap').hidden=t==='game';
   showResults(false);refreshGame();refreshStart();
 }
 $('tabTuner').onclick=()=>setTab('tuner');
@@ -254,7 +270,7 @@ function refreshGame(){
   if(S.tab!=='game')return;
   const sc=game?{notes:game.notes,oct:game.oct}:buildScale();
   const first=sc.notes[0],top=sc.notes[Math.floor(sc.notes.length/2)];
-  $('gRange').textContent=spell(first)+' – '+spell(top)+(sc.oct<S.oct?'  (limited to '+sc.oct+' octave'+(sc.oct>1?'s':'')+' to stay in range)':'')+' · '+sc.notes.length+' notes, up and down';
+  $('gRange').textContent=spell(first)+' – '+spell(top)+(sc.oct<S.oct?'  (limited to '+sc.oct+' octave'+(sc.oct>1?'s':'')+' to stay in range)':'')+' · '+sc.notes.length+' notes, up and down · '+TUNE_NAME[S.tune]+', ±'+S.gtol+'¢';
   renderStrip(sc.notes);
   $('playFirst').textContent='▶ Play '+spell(first);
   $('setup').hidden=!!game;$('playFirst').hidden=!!game;$('metro').hidden=!game;
@@ -372,6 +388,7 @@ function sample(now){
     // After that, judge pitch class only, so an octave slip in detection doesn't count as a wrong note.
     diff-=12*Math.round(diff/12);
     target=game.notes[game.i].midi;sp=game.notes[game.i];
+    diff-=(sp.adj||0)/100;                         // measure against the chosen tuning
   }
   const cents=diff*100;
   const p={t:now,c:cents,tg:target,f:freqOf(m),sp};
@@ -387,14 +404,14 @@ function updateReadout(p){
     if(!game||game.state==='play'){chip.textContent=game?'Play '+spell(game.notes[game.i]):'Waiting for a note';chip.className=game?'chip cue':'chip'}
     return}
   setNote(p.sp||nameOf(p.tg));
-  const c=Math.round(p.c),good=Math.abs(p.c)<=S.tol;
+  const c=Math.round(p.c),good=Math.abs(p.c)<=TOL();
   ce.textContent=Math.abs(p.c)>=50?(p.c>0?'> +50¢':'< −50¢'):(c>0?'+':c<0?'−':'±')+Math.abs(c)+'¢';
   ce.className='cents '+(good?'good':'off');
   if(!game||game.state==='play'){
     chip.className='chip '+(good?'good':'off');
     chip.textContent=Math.abs(p.c)>=50?'Wrong note':good?'In tune':(p.c>0?'Sharp':'Flat');
   }
-  $('hz').textContent=p.f.toFixed(1)+' Hz · target '+freqOf(p.tg).toFixed(1)+' Hz';
+  $('hz').textContent=p.f.toFixed(1)+' Hz · target '+freqOf(p.tg+((p.sp&&p.sp.adj)||0)/100).toFixed(1)+' Hz';
 }
 
 /* ---------- Scale game ---------- */
@@ -432,7 +449,7 @@ function gameTick(now,cents){
   if(game.state!=='play')return;
   if(cents!=null&&Math.abs(cents)<50){
     game.held+=dt;game.sumC+=cents*dt;game.sumA+=Math.abs(cents)*dt;
-    if(Math.abs(cents)<=S.tol)game.inT+=dt;
+    if(Math.abs(cents)<=TOL())game.inT+=dt;
   }
   if(game.held>=game.beats*game.period){
     const h=game.held;
@@ -461,7 +478,7 @@ function metroFrame(now){
     pulse.textContent=(beat%game.beats)+1;
     const hb=game.held/game.period;
     [...$('beats').children].forEach((d,i)=>{d.firstChild.style.width=Math.max(0,Math.min(1,hb-i))*100+'%'});
-    $('metroLbl').textContent='Note '+(game.i+1)+' of '+game.notes.length+' · hold '+spell(game.notes[game.i])+' for '+game.beats+' beat'+(game.beats>1?'s':'');
+    $('metroLbl').textContent='Note '+(game.i+1)+' of '+game.notes.length+' · hold '+spell(game.notes[game.i])+vsEqual(game.notes[game.i].adj||0)+' for '+game.beats+' beat'+(game.beats>1?'s':'');
   }
 }
 function click(strong){
@@ -501,16 +518,16 @@ function showResults(on){
   const rs=g.results,score=Math.round(rs.reduce((s,r)=>s+r.pct,0)/rs.length);
   const meanAbs=rs.reduce((s,r)=>s+r.abs,0)/rs.length;
   $('rScore').textContent=score;
-  $('rSub').textContent='% of held time in tune (±'+S.tol+'¢) · average '+meanAbs.toFixed(1)+'¢ off · '+(g.total/1000).toFixed(0)+' s total';
+  $('rSub').textContent='% of held time in tune (±'+TOL()+'¢, '+TUNE_NAME[S.tune]+') · average '+meanAbs.toFixed(1)+'¢ off · '+(g.total/1000).toFixed(0)+' s total';
   // tendency by scale degree: combine up and down occurrences of the same note
   const by={};g.notes.forEach((x,i)=>{const k=spell(x);(by[k]=by[k]||{x,a:[]}).a.push(rs[i].avg)});
-  const worst=Object.values(by).map(v=>({x:v.x,avg:v.a.reduce((s,a)=>s+a,0)/v.a.length})).sort((a,b)=>Math.abs(b.avg)-Math.abs(a.avg)).slice(0,2).filter(w=>Math.abs(w.avg)>=Math.max(4,S.tol/2));
+  const worst=Object.values(by).map(v=>({x:v.x,avg:v.a.reduce((s,a)=>s+a,0)/v.a.length})).sort((a,b)=>Math.abs(b.avg)-Math.abs(a.avg)).slice(0,2).filter(w=>Math.abs(w.avg)>=Math.max(4,TOL()/2));
   $('rTend').textContent=score>=90?'Clean scale. '+(worst.length?'The note to watch is '+spell(worst[0].x)+', '+fmt(worst[0].avg)+' on average.':'No note leaned consistently sharp or flat.')
     :worst.length?'Biggest tendencies: '+worst.map(w=>spell(w.x)+' '+fmt(w.avg)).join(', ')+'. Practise those against an open string or a drone.'
     :'Your misses went both ways rather than one direction, so steadiness, not finger placement, is the thing to work on.';
   const B=$('rBars');B.innerHTML='';
   g.notes.forEach((x,i)=>{
-    const r=rs[i],v=Math.max(-30,Math.min(30,r.avg)),w=Math.abs(v)/60*100,good=Math.abs(r.avg)<=S.tol;
+    const r=rs[i],v=Math.max(-30,Math.min(30,r.avg)),w=Math.abs(v)/60*100,good=Math.abs(r.avg)<=TOL();
     B.insertAdjacentHTML('beforeend','<span class="nm">'+spell(x)+(i>0&&i>=g.notes.length/2?' ↓':'')+'</span><div class="track"><i style="left:'+(v<0?50-w:50)+'%;width:'+Math.max(w,0.8)+'%;background:var('+(good?'--good':'--off')+')"></i></div><span class="pc">'+fmt(r.avg)+' · '+r.pct+'%</span>');
   });
   B.insertAdjacentHTML('beforeend','<span></span><div class="axis"><span>−30¢ flat</span><span>0</span><span>sharp +30¢</span></div><span></span>');
@@ -543,7 +560,7 @@ function draw(now){
   const y=c=>T+ph/2-(Math.max(-RANGE,Math.min(RANGE,c))/RANGE)*(ph/2);
   const tNow=running?now:frozenNow,x=t=>L+pw-((tNow-t)/SPAN)*pw;
   g.clearRect(0,0,W,H);
-  g.fillStyle=v('--band');g.fillRect(L,y(S.tol),pw,y(-S.tol)-y(S.tol));
+  g.fillStyle=v('--band');g.fillRect(L,y(TOL()),pw,y(-TOL())-y(TOL()));
   // metronome beat lines during the scale game
   if(game&&running){
     g.strokeStyle=v('--rule');g.lineWidth=1;
@@ -569,7 +586,7 @@ function draw(now){
   for(const p of hist){
     if(p.c==null){prev=null;continue}
     if(prev&&prev.tg===p.tg){
-      g.strokeStyle=Math.abs(p.c)<=S.tol?good:off;
+      g.strokeStyle=Math.abs(p.c)<=TOL()?good:off;
       g.beginPath();g.moveTo(x(prev.t),y(prev.c));g.lineTo(x(p.t),y(p.c));g.stroke();
     }else if(x(p.t)>L){
       g.fillStyle=ink;g.fillText(p.sp?spell(p.sp):label(p.tg),Math.max(L+4,x(p.t)),y(0)-6);
@@ -578,7 +595,7 @@ function draw(now){
   }
   const last=hist[hist.length-1];
   if(last&&last.c!=null){
-    g.fillStyle=Math.abs(last.c)<=S.tol?good:off;g.beginPath();g.arc(x(last.t),y(last.c),5,0,Math.PI*2);g.fill();
+    g.fillStyle=Math.abs(last.c)<=TOL()?good:off;g.beginPath();g.arc(x(last.t),y(last.c),5,0,Math.PI*2);g.fill();
   }
 }
 function loop(now){if(running&&an)sample(now);if(running)frozenNow=now;metroFrame(now);draw(now);requestAnimationFrame(loop)}
