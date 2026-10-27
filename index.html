@@ -162,15 +162,31 @@ let ac=null,stream=null,an=null,buf=null,running=false,wake=null;
 let hist=[],recent=[],target=null,cand=null,candN=0,lastVoiced=0;
 const SPAN=8000;
 
+let starting=false;
 async function start(){
+  if(starting)return;
   $('msg').classList.remove('err');
-  if(!navigator.mediaDevices?.getUserMedia){
-    showErr('This browser can\'t reach the microphone from here. Open the file in Chrome, Firefox or Safari on a computer, or serve it over https.');return}
+  if(!window.isSecureContext||!navigator.mediaDevices?.getUserMedia){
+    showErr('The microphone only works on an https:// page or a file opened directly in Chrome, Firefox or Safari. Open the GitHub Pages address instead.');return}
+  // Create and resume the audio context inside the tap itself; Safari and Chrome keep it silent otherwise.
+  ac=new (window.AudioContext||window.webkitAudioContext)();
+  ac.resume().catch(()=>{});
+  starting=true;
+  $('start').textContent='Waiting for microphone permission…';$('start').disabled=true;
+  $('msg').textContent='Your browser is asking to use the microphone. Choose Allow.';
   try{
     stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
   }catch(e){
-    showErr(e.name==='NotAllowedError'?'Microphone access is blocked. Allow it in the browser\'s site settings, then press Start again.':'Couldn\'t open the microphone: '+e.message);return}
-  ac=new (window.AudioContext||window.webkitAudioContext)();
+    ac.close().catch(()=>{});ac=null;starting=false;
+    $('start').textContent='Start listening';$('start').disabled=false;
+    const why={
+      NotAllowedError:'Microphone access was denied. Allow it in your browser\'s site settings (on iPhone: the aA menu in Safari → Website Settings → Microphone), then press Start listening again.',
+      NotFoundError:'No microphone was found. Connect one and press Start listening again.',
+      NotReadableError:'Another app is using the microphone. Close it and press Start listening again.'
+    }[e.name]||('Couldn\'t open the microphone: '+e.message);
+    showErr(why);return}
+  starting=false;$('start').disabled=false;
+  if(ac.state!=='running')await ac.resume().catch(()=>{});
   const src=ac.createMediaStreamSource(stream);
   const hp=ac.createBiquadFilter();hp.type='highpass';hp.frequency.value=150;
   an=ac.createAnalyser();an.fftSize=4096;src.connect(hp);hp.connect(an);
